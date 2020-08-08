@@ -3,17 +3,24 @@ from datetime import datetime
 import gspread
 import logging
 from config import *
+from utils import *
 from hebrew_phrases import *
+import random
 
 UNKNOWN_USER_NAME = "?"
-
-MISSING_TOPIC = "FOO"
-
-MAX_QUESTIONS = 5
+MISSING_TOPIC = "MISSING_TOPIC"
 UNKNOWN_USER = "?"
+MAX_QUESTIONS = 5
+
+OUTPUT_URL_COL = 3
+OUTPUT_NAME_COL = 4
+OUTPUT_RUNTIME_COL = 5
+
+OUTPUT_SUBJECT_ROW = 1
+OUTPUT_TYPE_ROW = 2
+
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s\t%(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-
 gc = gspread.service_account("credentials.json")
 logging.info("google login successful")
 
@@ -33,6 +40,7 @@ query_sheet = ui_file.worksheet("query")
 class QuestionHandler:
     def __init__(self, sheet):
         questions = sheet.get_all_records()
+        random.shuffle(questions)
         for q in questions:
             q["topics"] = {topic for topic in [q[SUBJECT], q[SUBJECT2], q[SUBJECT3]]
                            if topic}
@@ -55,44 +63,51 @@ def create_query_dictionary(sheet):
     return [dict(zip(keys, v)) for v in queries]
 
 
-@dataclass
 class QueryHandler:
 
-    def __init__(self, ui_sheet):
-        output_name_column = 4
+    def __init__(self, sheet):
+        self.ui_sheet = sheet
 
-        if ui_sheet.cell(1, 4).value == BUILDING_TEST:
-            ui_sheet.update_cell(1, output_name_column, UNKNOWN_USER_NAME)
-        self.current_user = ui_sheet.cell(1, output_name_column).value
-        ui_sheet.update_cell(1, output_name_column, BUILDING_TEST)
+        if self.ui_sheet.cell(1, 4).value == BUILDING_TEST:  # todo cleaner code
+            self.ui_sheet.update_cell(1, OUTPUT_NAME_COL, UNKNOWN_USER_NAME)
 
-        queries = create_query_dictionary(ui_sheet)
+        self.current_user = self.ui_sheet.cell(1, OUTPUT_NAME_COL).value
+        self.ui_sheet.update_cell(1, OUTPUT_NAME_COL, BUILDING_TEST)
+
+        queries = create_query_dictionary(self.ui_sheet)
 
         self.run_time = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-        self.output_file = gc.create(f"{self.run_time}_{self.current_user}", OUTPUT_FOLDER_ID)
+        self.output_file = copy_sheet_into(gc, OUTPUT_TEMPLATE_KEY,
+                                           title=f"{self.run_time}_{self.current_user}",
+                                           folder_id=OUTPUT_FOLDER_ID)
         self.output_sheet = self.output_file.sheet1
-        print(self.output_file.url)  # todo remove
+
+        print(self.run_time, self.current_user, self.output_file.url)
         self.log_run()
 
         self.found_questions = set()
         self.process_queries(queries)
 
+        self.clear_query()
+        self.clear_old_results()
+
     def process_queries(self, queries):
-        for i in range(len(queries)):  # todo prettify
-            q = queries[i]
+        for query_index in range(len(queries)):  # todo prettify
+            q = queries[query_index]
             if not q[SUBJECT]:
                 continue
             matching_questions = self.find_matching_questions(q)
 
-            self.output_sheet.update_cell(1, 1 + i, q[SUBJECT])
-            self.output_sheet.update_cell(2, 1 + i, q[TYPE])
+            self.output_sheet.update_cell(OUTPUT_SUBJECT_ROW, 2 + query_index, q[SUBJECT])
+            self.output_sheet.update_cell(OUTPUT_TYPE_ROW, 2 + query_index, q[TYPE])
 
             if not matching_questions:
-                self.output_sheet.update_cell(3, 1 + i, NO_QUESTIONS_FOUND)
+                self.output_sheet.update_cell(3, 2 + query_index, NO_QUESTIONS_FOUND)
                 continue
 
-            for j in range(min(len(matching_questions), MAX_QUESTIONS)):
-                self.output_sheet.update_cell(3 + j, 1 + i, matching_questions[j])
+            for col in range(min(MAX_QUESTIONS, len(matching_questions))):
+                self.output_sheet.update_cell(3 + col, 2 + query_index,
+                                              matching_questions[col])
 
     def find_matching_questions(self, q):
         result = []
@@ -108,18 +123,29 @@ class QueryHandler:
         return result
 
     def log_run(self):
-        output_url_column = 3
-        output_name_column = 4
-        output_time_column = 5
+        next_vacant_row = len(query_sheet.col_values(OUTPUT_NAME_COL)) + 1
 
-        next_vacant_row = len(query_sheet.col_values(output_name_column)) + 1
+        query_sheet.update_cell(next_vacant_row, OUTPUT_NAME_COL, self.current_user)
+        query_sheet.update_cell(next_vacant_row, OUTPUT_RUNTIME_COL, self.run_time)
+        query_sheet.update_cell(next_vacant_row, OUTPUT_URL_COL, self.output_file.url)
 
-        query_sheet.update_cell(next_vacant_row, output_name_column, self.current_user)
-        query_sheet.update_cell(next_vacant_row, output_time_column, self.run_time)
-        query_sheet.update_cell(next_vacant_row, output_url_column, self.output_file.url)
+        query_sheet.update_cell(1, OUTPUT_NAME_COL, "")  # removes name
 
-        query_sheet.update_cell(1, output_name_column, "")  # removes name
+    def clear_query(self):
+        logging.info("clearing user input")
+        for i in range(3, 22 + 1):  # todo improve by batch_update rather than one by one
+            for j in range(1, 2 + 1):
+                self.ui_sheet.update_cell(i, j, "")
+        logging.info("done clearing input")
 
+    def clear_old_results(self):
+        logging.info("clearing old results")
+        result_count = len(self.ui_sheet.col_values(OUTPUT_URL_COL)) - 2
+        if result_count > 10:
+            for i in range(result_count):
+                for j in [OUTPUT_NAME_COL, OUTPUT_RUNTIME_COL, OUTPUT_URL_COL]:
+                    self.ui_sheet.update_cell(3 + i, j, "")
+        logging.info("done clearing old results")
 
 
 query = QueryHandler(query_sheet)

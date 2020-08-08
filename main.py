@@ -8,7 +8,6 @@ from email.utils import parseaddr
 from hebrew_phrases import *
 import random
 
-
 UNKNOWN_USER_NAME = "?"
 MISSING_TOPIC = "MISSING_TOPIC"
 MAX_QUESTIONS = 5
@@ -64,6 +63,16 @@ def create_query_dictionary(sheet):
     return [dict(zip(keys, v)) for v in queries]
 
 
+def censor_email(email):
+    at = email.find("@")
+    account = email[:at]
+    domain = email[at:]
+    if (len(account)) > 2:
+        prefix = account[0]
+        suffix = account[-1]
+        return prefix + "*" * (len(account) - 2) + suffix + domain
+
+
 class QueryHandler:
 
     def __init__(self, sheet):
@@ -81,12 +90,12 @@ class QueryHandler:
 
         queries = create_query_dictionary(self.ui_sheet)
 
-        self.run_time = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        self.run_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.output_file = copy_sheet_into(gc, OUTPUT_TEMPLATE_KEY,
                                            title=f"{self.run_time}_{self.current_user}",
                                            folder_id=OUTPUT_FOLDER_ID)
         gc.insert_permission(self.output_file.id, self.current_user, perm_type="user",
-                             role="writer", notify="True", email_message="hello world")
+                             role="writer", notify="True", email_message=EMAIL_MESSAGE)
         self.output_sheet = self.output_file.sheet1
 
         print(self.run_time, self.current_user, self.output_file.url)
@@ -132,9 +141,10 @@ class QueryHandler:
     def log_run(self):
         next_vacant_row = len(query_sheet.col_values(OUTPUT_NAME_COL)) + 1
 
-        query_sheet.update_cell(next_vacant_row, OUTPUT_NAME_COL, self.current_user)
-        query_sheet.update_cell(next_vacant_row, OUTPUT_RUNTIME_COL, self.run_time)
         query_sheet.update_cell(next_vacant_row, OUTPUT_URL_COL, self.output_file.url)
+        query_sheet.update_cell(next_vacant_row, OUTPUT_NAME_COL,
+                                censor_email(self.current_user))
+        query_sheet.update_cell(next_vacant_row, OUTPUT_RUNTIME_COL, self.run_time)
 
         query_sheet.update_cell(1, OUTPUT_NAME_COL, "")  # removes name
 

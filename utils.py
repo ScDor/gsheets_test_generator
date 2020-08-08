@@ -34,3 +34,13 @@ def copy_sheet_into(gc, file_id, title, folder_id, copy_permissions=False):
                 pass
 
     return new_spreadsheet
+
+
+def censor_email(email):
+    at = email.find("@")
+    account = email[:at]
+    domain = email[at:]
+    if (len(account)) > 2:
+        prefix = account[0]
+        suffix = account[-1]
+        return prefix + "*" * (len(account) - 2) + suffix + domain

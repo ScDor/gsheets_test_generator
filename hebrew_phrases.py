@@ -8,3 +8,8 @@ TYPE = "סוג"
 QUESTION_BODY = "שאלה"
 MSG_INVALID_EMAIL = "כתובת מייל לא תקינה, נסה שוב"
 EMAIL_MESSAGE = "שלום, מצורפות השאלות על פי בקשתך"
+
+BAGRUT = "בגרות"
+YES = "כן"
+NO = "לא"
+ALL = "הכל"

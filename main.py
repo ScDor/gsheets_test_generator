@@ -12,12 +12,14 @@ UNKNOWN_USER_NAME = "?"
 MISSING_TOPIC = "MISSING_TOPIC"
 MAX_QUESTIONS = 5
 
-OUTPUT_URL_COL = 3
-OUTPUT_NAME_COL = 4
-OUTPUT_RUNTIME_COL = 5
+OUTPUT_URL_COL = 4
+OUTPUT_NAME_COL = 5
+OUTPUT_RUNTIME_COL = 6
+OUTPUT_METADATA_COLUMNS = [OUTPUT_URL_COL, OUTPUT_NAME_COL, OUTPUT_RUNTIME_COL]
 
 OUTPUT_SUBJECT_ROW = 1
 OUTPUT_TYPE_ROW = 2
+OUTPUT_BAGRUT_ROW = 3
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s\t%(message)s', datefmt='%Y-%m-%d %H:%M:%S')
@@ -50,6 +52,9 @@ class QuestionHandler:
 
             for key in SUBJECTS:
                 del q[key]
+
+            q[BAGRUT] = True if q[BAGRUT] else False
+
         self.questions = questions
         logging.info(f"read {len(self.questions)} questions")
 
@@ -58,33 +63,22 @@ question_handler = QuestionHandler(question_sheet)
 
 
 def create_query_dictionary(sheet):
-    keys = sheet.row_values(2)[:2]
-    queries = [q[:2] for q in sheet.get_all_values()[2:]]  # third row onwards
+    keys = sheet.row_values(2)[:3]
+    queries = [q[:3] for q in sheet.get_all_values()[2:]]  # third row onwards
     return [dict(zip(keys, v)) for v in queries]
 
 
-def censor_email(email):
-    at = email.find("@")
-    account = email[:at]
-    domain = email[at:]
-    if (len(account)) > 2:
-        prefix = account[0]
-        suffix = account[-1]
-        return prefix + "*" * (len(account) - 2) + suffix + domain
-
-
 class QueryHandler:
-
     def __init__(self, sheet):
         self.ui_sheet = sheet
 
         if self.ui_sheet.cell(1, 4).value == BUILDING_TEST:  # todo cleaner code
             self.ui_sheet.update_cell(1, OUTPUT_NAME_COL, UNKNOWN_USER_NAME)
 
-        self.current_user = self.ui_sheet.cell(1, OUTPUT_NAME_COL).value
-        if "@" not in parseaddr(self.current_user)[1]:
+        self.email = self.ui_sheet.cell(1, OUTPUT_NAME_COL).value
+        if "@" not in parseaddr(self.email)[1]:
             self.ui_sheet.update_cell(1, OUTPUT_NAME_COL, MSG_INVALID_EMAIL)
-            return
+            raise ValueError("Invalid email")
 
         self.ui_sheet.update_cell(1, OUTPUT_NAME_COL, BUILDING_TEST)
 
@@ -92,13 +86,18 @@ class QueryHandler:
 
         self.run_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.output_file = copy_sheet_into(gc, OUTPUT_TEMPLATE_KEY,
-                                           title=f"{self.run_time}_{self.current_user}",
+                                           title=f"{self.run_time}_{self.email}",
                                            folder_id=OUTPUT_FOLDER_ID)
-        gc.insert_permission(self.output_file.id, self.current_user, perm_type="user",
-                             role="writer", notify="True", email_message=EMAIL_MESSAGE)
+        try:
+            gc.insert_permission(self.output_file.id, self.email, perm_type="user",
+                                 role="writer", notify="True", email_message=EMAIL_MESSAGE)
+        except gspread.exceptions.APIError:
+            logging.error(f"invalid email {self.email}")
+            raise ValueError(f"Invalid email {self.email}")
+
         self.output_sheet = self.output_file.sheet1
 
-        print(self.run_time, self.current_user, self.output_file.url)
+        print(self.run_time, self.email, self.output_file.url)
         self.log_run()
 
         self.found_questions = set()
@@ -116,24 +115,29 @@ class QueryHandler:
 
             self.output_sheet.update_cell(OUTPUT_SUBJECT_ROW, 2 + query_index, q[SUBJECT])
             self.output_sheet.update_cell(OUTPUT_TYPE_ROW, 2 + query_index, q[TYPE])
+            self.output_sheet.update_cell(OUTPUT_BAGRUT_ROW, 2 + query_index, q[BAGRUT])
 
             if not matching_questions:
                 self.output_sheet.update_cell(3, 2 + query_index, NO_QUESTIONS_FOUND)
                 continue
 
             for col in range(min(MAX_QUESTIONS, len(matching_questions))):
-                self.output_sheet.update_cell(3 + col, 2 + query_index,
+                self.output_sheet.update_cell(4 + col, 2 + query_index,
                                               matching_questions[col])
 
-    def find_matching_questions(self, q):
+    def find_matching_questions(self, query):
         result = []
         for question in question_handler.questions:
             body = question[QUESTION_BODY]
             if body in self.found_questions:
                 continue
 
-            if q[SUBJECT] in question["topics"] and (not q[TYPE]  # q doesn't specify type
-                                                     or q[TYPE] == question[TYPE]):
+            if query[SUBJECT] in question["topics"] and \
+                    ((not query[TYPE]) or query[TYPE] == question[TYPE]):
+
+                if (query[BAGRUT] == YES and not question[BAGRUT]) \
+                        or (query[BAGRUT] == NO and question[BAGRUT]):
+                    continue
                 result.append(body)
                 self.found_questions.add(body)
         return result
@@ -143,7 +147,7 @@ class QueryHandler:
 
         query_sheet.update_cell(next_vacant_row, OUTPUT_URL_COL, self.output_file.url)
         query_sheet.update_cell(next_vacant_row, OUTPUT_NAME_COL,
-                                censor_email(self.current_user))
+                                censor_email(self.email))
         query_sheet.update_cell(next_vacant_row, OUTPUT_RUNTIME_COL, self.run_time)
 
         query_sheet.update_cell(1, OUTPUT_NAME_COL, "")  # removes name
@@ -151,7 +155,7 @@ class QueryHandler:
     def clear_query(self):
         logging.info("clearing user input")
         for i in range(3, 22 + 1):  # todo improve by batch_update rather than one by one
-            for j in range(1, 2 + 1):
+            for j in range(1, 3 + 1):
                 self.ui_sheet.update_cell(i, j, "")
         logging.info("done clearing input")
 

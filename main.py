@@ -4,12 +4,13 @@ import gspread
 import logging
 from config import *
 from utils import *
+from email.utils import parseaddr
 from hebrew_phrases import *
 import random
 
+
 UNKNOWN_USER_NAME = "?"
 MISSING_TOPIC = "MISSING_TOPIC"
-UNKNOWN_USER = "?"
 MAX_QUESTIONS = 5
 
 OUTPUT_URL_COL = 3
@@ -72,6 +73,10 @@ class QueryHandler:
             self.ui_sheet.update_cell(1, OUTPUT_NAME_COL, UNKNOWN_USER_NAME)
 
         self.current_user = self.ui_sheet.cell(1, OUTPUT_NAME_COL).value
+        if "@" not in parseaddr(self.current_user)[1]:
+            self.ui_sheet.update_cell(1, OUTPUT_NAME_COL, MSG_INVALID_EMAIL)
+            return
+
         self.ui_sheet.update_cell(1, OUTPUT_NAME_COL, BUILDING_TEST)
 
         queries = create_query_dictionary(self.ui_sheet)
@@ -80,6 +85,8 @@ class QueryHandler:
         self.output_file = copy_sheet_into(gc, OUTPUT_TEMPLATE_KEY,
                                            title=f"{self.run_time}_{self.current_user}",
                                            folder_id=OUTPUT_FOLDER_ID)
+        gc.insert_permission(self.output_file.id, self.current_user, perm_type="user",
+                             role="writer", notify="True", email_message="hello world")
         self.output_sheet = self.output_file.sheet1
 
         print(self.run_time, self.current_user, self.output_file.url)

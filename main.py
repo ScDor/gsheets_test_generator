@@ -47,7 +47,7 @@ class QuestionHandler:
             q["topics"] = {topic for topic in [q[SUBJECT], q[SUBJECT2], q[SUBJECT3]]
                            if topic}
             if not q["topics"]:
-                logging.warning(f"no topic for question {q[QUESTION_BODY][:80]}")
+                # logging.warning(f"no topic for question {q[QUESTION_BODY][:80]}") # todo use
                 q["topics"] = MISSING_TOPIC
 
             for key in SUBJECTS:
@@ -90,7 +90,7 @@ class QueryHandler:
                                            folder_id=OUTPUT_FOLDER_ID)
         try:
             gc.insert_permission(self.output_file.id, self.email, perm_type="user",
-                                 role="writer", notify="True", email_message=EMAIL_MESSAGE)
+                                 role="writer", notify="True", email_message=MSG_EMAIL_BODY)
         except gspread.exceptions.APIError:
             logging.error(f"invalid email {self.email}")
             raise ValueError(f"Invalid email {self.email}")
@@ -118,7 +118,7 @@ class QueryHandler:
             self.output_sheet.update_cell(OUTPUT_BAGRUT_ROW, 2 + query_index, q[BAGRUT])
 
             if not matching_questions:
-                self.output_sheet.update_cell(3, 2 + query_index, NO_QUESTIONS_FOUND)
+                self.output_sheet.update_cell(3, 3 + query_index, MSG_NO_QUESTIONS_FOUND)
                 continue
 
             for col in range(min(MAX_QUESTIONS, len(matching_questions))):

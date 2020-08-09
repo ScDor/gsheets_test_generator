@@ -7,7 +7,8 @@ SUBJECTS = [SUBJECT, SUBJECT2, SUBJECT3]
 TYPE = "סוג"
 QUESTION_BODY = "שאלה"
 MSG_INVALID_EMAIL = "כתובת מייל לא תקינה, נסה שוב"
-EMAIL_MESSAGE = "שלום, מצורפות השאלות על פי בקשתך"
+MSG_EMAIL_BODY = "שלום, מצורפות השאלות על פי בקשתך"
+MSG_NO_QUESTIONS_FOUND = "לא נמצאו שאלות, ייתכן שמופיעות בעמודה אחרת"
 
 BAGRUT = "בגרות"
 YES = "כן"
